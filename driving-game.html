@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Driving Simulator — Cockpit View</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a12;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  #gameContainer {
+    position: relative;
+    aspect-ratio: 1100 / 750;
+    width: 1100px;
+    max-width: 100vw;
+    max-height: 100vh;
+    border: 2px solid #333;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,0,0,0.8);
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  #instructions {
+    position: absolute;
+    inset: 0;
+    background: rgba(8,8,20,0.95);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 20px;
+    text-align: center;
+  }
+  #instructions h1 {
+    font-size: 32px;
+    margin-bottom: 4px;
+    background: linear-gradient(90deg,#4ade80,#60a5fa,#fbbf24);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  #instructions .sub { color: #999; margin-bottom: 20px; font-size: 14px; }
+  .ctrl-grid {
+    display: grid;
+    grid-template-columns: auto auto;
+    gap: 7px 28px;
+    margin-bottom: 20px;
+    font-size: 13px;
+  }
+  .ctrl-grid .key {
+    background: #2a2a3e;
+    border: 1px solid #555;
+    border-radius: 5px;
+    padding: 3px 12px;
+    font-weight: bold;
+    color: #4ade80;
+    text-align: center;
+    min-width: 80px;
+  }
+  .ctrl-grid .desc { text-align: left; color: #ccc; align-self: center; }
+  #startBtn {
+    background: linear-gradient(90deg,#22c55e,#16a34a);
+    color: white;
+    border: none;
+    padding: 14px 48px;
+    font-size: 20px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: transform .15s;
+    box-shadow: 0 4px 15px rgba(34,197,94,0.3);
+  }
+  #startBtn:hover { transform: scale(1.05); }
+  #toast {
+    position: absolute;
+    bottom: 28%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 10px 24px;
+    font-size: 15px;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity .3s;
+    pointer-events: none;
+    white-space: nowrap;
+    max-width: 90%;
+  }
+  #toast.show { opacity: 1; }
+  #toast.warn { border-color: #f87171; color: #fca5a5; }
+  #toast.info { border-color: #4ade80; color: #86efac; }
+
+  #gearSelector {
+    position: absolute;
+    top: 57%;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 5px;
+    z-index: 26;
+    background: rgba(0,0,0,0.65);
+    padding: 5px 8px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .gear-btn {
+    width: 42px;
+    height: 42px;
+    border: 2px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    background: rgba(30,30,40,0.8);
+    color: #888;
+    font-weight: bold;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    transition: all .15s;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+  }
+  .gear-btn.active[data-gear="P"] { background: #60a5fa; color: #fff; border-color: #60a5fa; box-shadow: 0 0 12px rgba(96,165,250,0.6); }
+  .gear-btn.active[data-gear="R"] { background: #ef4444; color: #fff; border-color: #ef4444; box-shadow: 0 0 12px rgba(239,68,68,0.6); }
+  .gear-btn.active[data-gear="N"] { background: #fbbf24; color: #000; border-color: #fbbf24; box-shadow: 0 0 12px rgba(251,191,36,0.6); }
+  .gear-btn.active[data-gear="D"] { background: #22c55e; color: #fff; border-color: #22c55e; box-shadow: 0 0 12px rgba(34,197,94,0.6); }
+
+  #touchControls {
+    display: none;
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 28;
+    pointer-events: none;
+    padding: 6px 8px 10px;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  #touchControls.show { display: flex; }
+  .tc-group { display: flex; gap: 5px; align-items: flex-end; pointer-events: none; }
+  .tc-col { display: flex; flex-direction: column; gap: 4px; align-items: center; pointer-events: none; }
+  .tc-btn {
+    pointer-events: auto;
+    background: rgba(15,15,25,0.78);
+    border: 2px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    color: #ddd;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+    cursor: pointer;
+    transition: background .1s, border-color .1s;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+  }
+  .tc-btn.pressed {
+    background: rgba(74,222,128,0.35);
+    border-color: #4ade80;
+    color: #fff;
+  }
+  .tc-steer { width: 58px; height: 58px; font-size: 24px; }
+  .tc-gas { width: 78px; height: 72px; font-size: 14px; background: rgba(34,197,94,0.22); border-color: rgba(74,222,128,0.25); }
+  .tc-gas.pressed { background: rgba(34,197,94,0.5); border-color: #4ade80; }
+  .tc-brake { width: 68px; height: 62px; font-size: 12px; background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.25); }
+  .tc-brake.pressed { background: rgba(239,68,68,0.45); border-color: #f87171; }
+  .tc-gear { width: 36px; height: 36px; font-size: 14px; }
+  .tc-gear.active { background: rgba(96,165,250,0.35); border-color: #60a5fa; color: #fff; }
+  .tc-sig { width: 44px; height: 36px; font-size: 11px; }
+  .tc-small { width: 44px; height: 36px; font-size: 10px; }
+
+  #rotatePrompt {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(5,5,15,0.97);
+    z-index: 999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 30px;
+  }
+  #rotatePrompt .rotate-icon {
+    font-size: 64px;
+    animation: rotateHint 2s infinite ease-in-out;
+    margin-bottom: 20px;
+  }
+  #rotatePrompt h2 { font-size: 22px; margin-bottom: 8px; color: #4ade80; }
+  #rotatePrompt p { font-size: 14px; color: #999; max-width: 300px; }
+  @keyframes rotateHint {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(-90deg); }
+  }
+
+  @media (max-width: 850px) and (orientation: portrait) {
+    #rotatePrompt { display: flex; }
+  }
+
+  @media (max-width: 850px) {
+    #instructions h1 { font-size: 22px; }
+    #instructions .sub { font-size: 12px; }
+    .ctrl-grid { font-size: 11px; gap: 5px 14px; }
+    .ctrl-grid .key { min-width: 60px; padding: 2px 8px; font-size: 11px; }
+    #startBtn { padding: 10px 32px; font-size: 16px; }
+    #toast { font-size: 13px; padding: 8px 16px; }
+  }
+
+  @media (max-width: 500px) {
+    .tc-steer { width: 48px; height: 48px; font-size: 20px; }
+    .tc-gas { width: 62px; height: 58px; font-size: 12px; }
+    .tc-brake { width: 54px; height: 50px; font-size: 10px; }
+    .tc-gear { width: 30px; height: 30px; font-size: 12px; }
+    .tc-sig { width: 36px; height: 30px; font-size: 9px; }
+    .tc-small { width: 36px; height: 30px; font-size: 9px; }
+    .tc-group { gap: 4px; }
+    #instructions h1 { font-size: 18px; }
+    #instructions .sub { font-size: 11px; }
+    .ctrl-grid { font-size: 10px; gap: 4px 10px; }
+    .ctrl-grid .key { min-width: 50px; padding: 2px 6px; font-size: 10px; }
+    #startBtn { padding: 8px 28px; font-size: 14px; }
+  }
+
+  @media (max-width: 380px) {
+    .tc-small { display: none; }
+    .tc-sig { width: 32px; height: 28px; font-size: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="rotatePrompt">
+  <div class="rotate-icon">📱</div>
+  <h2>Rotate to Landscape</h2>
+  <p>This driving simulator works best in landscape orientation. Please rotate your device sideways.</p>
+</div>
+
+<div id="gameContainer">
+  <canvas id="canvas" width="1100" height="750"></canvas>
+  <div id="instructions">
+    <h1>Driving Simulator — Cockpit View</h1>
+    <p class="sub">A realistic driver's perspective simulation. Check mirrors, signal, overtake, and navigate intersections.<br>On mobile: touch controls appear automatically at the bottom of the screen.</p>
+    <div class="ctrl-grid">
+      <div class="key">↑ / W</div><div class="desc">Accelerator (gas pedal)</div>
+      <div class="key">↓ / S</div><div class="desc">Brake pedal</div>
+      <div class="key">← / A</div><div class="desc">Steer left</div>
+      <div class="key">→ / D</div><div class="desc">Steer right</div>
+      <div class="key">Space</div><div class="desc">Hand brake</div>
+      <div class="key">Q / E</div><div class="desc">Left / Right turn signal</div>
+      <div class="key">H</div><div class="desc">Horn</div>
+      <div class="key">L</div><div class="desc">Toggle headlights</div>
+      <div class="key">P / R / N</div><div class="desc">Park / Reverse / Neutral gear</div>
+      <div class="key">F</div><div class="desc">Drive gear (shift to D to move forward)</div>
+
+    </div>
+    <button id="startBtn">Start Engine</button>
+  </div>
+  <div id="toast"></div>
+
+  <div id="gearSelector">
+    <button class="gear-btn" data-gear="P">P</button>
+    <button class="gear-btn" data-gear="R">R</button>
+    <button class="gear-btn" data-gear="N">N</button>
+    <button class="gear-btn" data-gear="D">D</button>
+  </div>
+
+  <div id="touchControls">
+    <div class="tc-group">
+      <button class="tc-btn tc-steer" data-key="ArrowLeft">&#9664;</button>
+      <button class="tc-btn tc-steer" data-key="ArrowRight">&#9654;</button>
+    </div>
+    <div class="tc-group">
+      <button class="tc-btn tc-sig" data-key="q">&#9664;sig</button>
+      <button class="tc-btn tc-sig" data-key="e">sig&#9654;</button>
+      <button class="tc-btn tc-small" data-key="h">HORN</button>
+      <button class="tc-btn tc-small" data-key=" ">HB</button>
+    </div>
+    <div class="tc-group">
+      <button class="tc-btn tc-brake" data-key="ArrowDown">BRAKE</button>
+      <button class="tc-btn tc-gas" data-key="ArrowUp">GAS</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const WINDSHIELD = { x: 55, y: 25, w: W - 110, h: 370 };
+const DASH_Y = 420;
+const REARVIEW = { x: W/2 - 100, y: 4, w: 200, h: 48 };
+const LEFT_MIRROR = { x: 3, y: 65, w: 105, h: 72 };
+const RIGHT_MIRROR = { x: W - 108, y: 65, w: 105, h: 72 };
+
+const LANE_W = 430;
+const NUM_LANES = 2;
+const LANE_OFFSET = (NUM_LANES - 1) / 2;
+const SEG_LEN = 200;
+const DRAW_DIST = 90;
+const ROAD_HALF = (NUM_LANES * LANE_W) / 2;
+
+const player = {
+  z: 0,
+  lane: 1,
+  speed: 0,
+  steering: 0,
+  gear: 'P',
+  leftSignal: false,
+  rightSignal: false,
+  signalTimer: 0,
+  horn: false,
+  headlights: true,
+  gasPressed: false,
+  brakePressed: false,
+  handbrake: false,
+  turning: null,
+  offRoad: false,
+  distance: 0,
+};
+
+let roadSegs = [];
+let traffic = [];
+let intersections = [];
+let guidanceText = '';
+let guidanceType = 'info';
+let toastMsg = '';
+let toastTimer = 0;
+let toastType = 'info';
+let running = false;
+const keys = {};
+
+function generateRoad() {
+  roadSegs = [];
+  let curve = 0;
+  for (let i = 0; i < 800; i++) {
+    let target = 0;
+    if (i % 30 === 0) target = (Math.random() - 0.5) * 0.004;
+    if (i % 80 === 0) target = (Math.random() - 0.5) * 0.008;
+    curve += (target - curve) * 0.02;
+    roadSegs.push({ curve: curve, sharp: Math.abs(curve) > 0.005 });
+  }
+}
+
+function generateIntersections() {
+  intersections = [];
+  for (let i = 0; i < 12; i++) {
+    intersections.push({
+      z: 1500 + i * 2200 + Math.random() * 400,
+      light: 'green',
+      timer: Math.random() * 10,
+      passed: false,
+      stopping: false,
+    });
+  }
+}
+
+function generateTraffic() {
+  traffic = [];
+  const colors = ['#dc2626','#2563eb','#16a34a','#ea580c','#7c3aed','#0891b2','#ca8a04','#be185d','#475569','#65a30d'];
+  for (let i = 0; i < 10; i++) {
+    const inRightLane = Math.random() < 0.7;
+    const lane = inRightLane ? 1 : 0;
+    const speed = inRightLane
+      ? 18 + Math.random() * 22
+      : 38 + Math.random() * 15;
+    traffic.push({
+      z: 400 + i * 600 + Math.random() * 300,
+      lane: lane,
+      speed: speed,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      type: Math.random() < 0.2 ? 'truck' : 'car',
+      passed: false,
+    });
+  }
+}
+
+function project(wx, wz) {
+  const z = Math.max(1, wz);
+  const persp = 420 / z;
+  const cx = WINDSHIELD.x + WINDSHIELD.w / 2;
+  const horizon = WINDSHIELD.y + 80;
+  return {
+    x: cx + persp * wx * 0.28,
+    y: horizon + persp * 115,
+    s: persp,
+  };
+}
+
+function projectMirror(lat, dist, region, angleOffset) {
+  const z = Math.max(1, dist);
+  const persp = 120 / z;
+  const cx = region.x + region.w / 2;
+  const horizon = region.y + 4;
+  return {
+    x: cx + persp * (lat - angleOffset) * 0.22,
+    y: horizon + persp * 38,
+    s: persp,
+  };
+}
+
+function render() {
+  ctx.fillStyle = '#15151f';
+  ctx.fillRect(0, 0, W, H);
+
+  drawSky();
+  drawRoadAndTraffic();
+  drawMirrors();
+  drawCockpitFrame();
+  drawDashboard();
+  drawGuidance();
+}
+
+function drawSky() {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(WINDSHIELD.x, WINDSHIELD.y, WINDSHIELD.w, WINDSHIELD.h);
+  ctx.clip();
+
+  const g = ctx.createLinearGradient(0, WINDSHIELD.y, 0, WINDSHIELD.y + WINDSHIELD.h * 0.5);
+  g.addColorStop(0, '#2a2a5e');
+  g.addColorStop(0.6, '#4d6d9a');
+  g.addColorStop(1, '#7b9dc5');
+  ctx.fillStyle = g;
+  ctx.fillRect(WINDSHIELD.x, WINDSHIELD.y, WINDSHIELD.w, WINDSHIELD.h);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  for (let i = 0; i < 6; i++) {
+    const cx = WINDSHIELD.x + (i * 180 + (player.z * 0.02) % 180) % WINDSHIELD.w;
+    const cy = WINDSHIELD.y + 20 + i * 8;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 40, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawRoadAndTraffic() {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(WINDSHIELD.x, WINDSHIELD.y, WINDSHIELD.w, WINDSHIELD.h);
+  ctx.clip();
+
+  if (player.turning) {
+    drawTurnAnimation();
+    ctx.restore();
+    return;
+  }
+
+  const playerWorldX = (player.lane - LANE_OFFSET) * LANE_W;
+  let roadX = 0, roadDX = 0;
+  const segs = [];
+
+  for (let i = 0; i < DRAW_DIST; i++) {
+    const segIdx = Math.floor(player.z / SEG_LEN + i) % roadSegs.length;
+    const seg = roadSegs[segIdx];
+    const z = i * SEG_LEN - (player.z % SEG_LEN);
+
+    roadDX += seg.curve * SEG_LEN;
+    roadX += roadDX;
+
+    segs.push({ z, relCenter: roadX - playerWorldX, curve: seg.curve, sharp: seg.sharp, idx: i });
+  }
+
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const s = segs[i], sp = segs[i - 1];
+    if (s.z <= 0) continue;
+
+    const shade = Math.floor(player.z / SEG_LEN + i) % 3 === 0;
+
+    const wL = s.relCenter - ROAD_HALF, wR = s.relCenter + ROAD_HALF;
+    const wLp = sp.relCenter - ROAD_HALF, wRp = sp.relCenter + ROAD_HALF;
+    const p1 = project(wL, s.z), p2 = project(wR, s.z);
+    const p3 = project(wRp, sp.z), p4 = project(wLp, sp.z);
+
+    ctx.fillStyle = shade ? '#4a4a4a' : '#424242';
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+    ctx.lineTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y);
+    ctx.closePath(); ctx.fill();
+
+    const gw = 250;
+    const gl1 = project(wL - gw, s.z), gl2 = project(wL, s.z);
+    const gl3 = project(wLp, sp.z), gl4 = project(wLp - gw, sp.z);
+    ctx.fillStyle = shade ? '#2a4a15' : '#244012';
+    ctx.beginPath();
+    ctx.moveTo(gl1.x, gl1.y); ctx.lineTo(gl2.x, gl2.y);
+    ctx.lineTo(gl3.x, gl3.y); ctx.lineTo(gl4.x, gl4.y);
+    ctx.closePath(); ctx.fill();
+
+    const gr1 = project(wR, s.z), gr2 = project(wR + gw, s.z);
+    const gr3 = project(wRp + gw, sp.z), gr4 = project(wRp, sp.z);
+    ctx.beginPath();
+    ctx.moveTo(gr1.x, gr1.y); ctx.lineTo(gr2.x, gr2.y);
+    ctx.lineTo(gr3.x, gr3.y); ctx.lineTo(gr4.x, gr4.y);
+    ctx.closePath(); ctx.fill();
+
+    if (shade) {
+      const cw = 10;
+      for (const side of [-1, 1]) {
+        const e1 = project(s.relCenter + side * (ROAD_HALF - cw), s.z);
+        const e2 = project(s.relCenter + side * ROAD_HALF, s.z);
+        const e3 = project(sp.relCenter + side * ROAD_HALF, sp.z);
+        const e4 = project(sp.relCenter + side * (ROAD_HALF - cw), sp.z);
+        ctx.fillStyle = '#e8e8e8';
+        ctx.beginPath();
+        ctx.moveTo(e1.x, e1.y); ctx.lineTo(e2.x, e2.y);
+        ctx.lineTo(e3.x, e3.y); ctx.lineTo(e4.x, e4.y);
+        ctx.closePath(); ctx.fill();
+      }
+
+      const ccw = 18;
+      const cl1 = project(s.relCenter - ccw, s.z), cl2 = project(s.relCenter + ccw, s.z);
+      const cl3 = project(sp.relCenter + ccw, sp.z), cl4 = project(sp.relCenter - ccw, sp.z);
+      ctx.fillStyle = '#fcd34d';
+      ctx.beginPath();
+      ctx.moveTo(cl1.x, cl1.y); ctx.lineTo(cl2.x, cl2.y);
+      ctx.lineTo(cl3.x, cl3.y); ctx.lineTo(cl4.x, cl4.y);
+      ctx.closePath(); ctx.fill();
+
+    }
+
+    if (s.sharp && i < 40 && i % 8 === 0) {
+      const sp2 = project(s.relCenter, s.z);
+      const sz = sp2.s * 200;
+      ctx.fillStyle = '#fbbf24';
+      ctx.beginPath();
+      ctx.moveTo(sp2.x, sp2.y - sz);
+      ctx.lineTo(sp2.x - sz * 0.6, sp2.y);
+      ctx.lineTo(sp2.x + sz * 0.6, sp2.y);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.font = `bold ${Math.max(8, sz * 0.5)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('!', sp2.x, sp2.y);
+    }
+  }
+
+  for (const isct of intersections) {
+    const relZ = isct.z - player.z;
+    if (relZ < 0 || relZ > DRAW_DIST * SEG_LEN) continue;
+
+    let rx = 0, rdx = 0;
+    for (let i = 0; i < DRAW_DIST; i++) {
+      const segIdx = Math.floor(player.z / SEG_LEN + i) % roadSegs.length;
+      const seg = roadSegs[segIdx];
+      const z = i * SEG_LEN - (player.z % SEG_LEN);
+      rdx += seg.curve * SEG_LEN;
+      rx += rdx;
+      if (z >= relZ) break;
+    }
+
+    const stopLine = project(rx - playerWorldX, relZ);
+    const slW = project(rx - playerWorldX + ROAD_HALF, relZ);
+    const slW2 = project(rx - playerWorldX - ROAD_HALF, relZ);
+    if (relZ > 50) {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.moveTo(slW2.x, slW2.y); ctx.lineTo(slW.x, slW.y);
+      ctx.lineTo(slW.x + 3, slW.y + 3); ctx.lineTo(slW2.x + 3, slW2.y + 3);
+      ctx.closePath(); ctx.fill();
+    }
+
+    const lightX = rx - playerWorldX + ROAD_HALF + 80;
+    const lp = project(lightX, relZ);
+    const lightSz = Math.max(4, lp.s * 80);
+    ctx.fillStyle = '#333';
+    ctx.fillRect(lp.x - lightSz * 0.15, lp.y - lightSz * 1.8, lightSz * 0.3, lightSz * 1.8);
+
+    for (let li = 0; li < 3; li++) {
+      const ly = lp.y - lightSz * 1.6 + li * lightSz * 0.55;
+      const colors = ['#ef4444', '#fbbf24', '#22c55e'];
+      const states = ['red', 'yellow', 'green'];
+      ctx.fillStyle = isct.light === states[li] ? colors[li] : '#333';
+      ctx.beginPath();
+      ctx.arc(lp.x, ly, lightSz * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+      if (isct.light === states[li]) {
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = colors[li];
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+
+  const visibleCars = [];
+  for (const car of traffic) {
+    const relZ = car.z - player.z;
+    if (relZ < -100 || relZ > DRAW_DIST * SEG_LEN) continue;
+
+    let rx = 0, rdx = 0;
+    for (let i = 0; i < DRAW_DIST; i++) {
+      const segIdx = Math.floor(player.z / SEG_LEN + i) % roadSegs.length;
+      const seg = roadSegs[segIdx];
+      const z = i * SEG_LEN - (player.z % SEG_LEN);
+      rdx += seg.curve * SEG_LEN;
+      rx += rdx;
+      if (z >= relZ) break;
+    }
+
+    const carWorldX = rx + (car.lane - LANE_OFFSET) * LANE_W;
+    const relX = carWorldX - playerWorldX;
+    visibleCars.push({ car, relX, relZ });
+  }
+
+  visibleCars.sort((a, b) => b.relZ - a.relZ);
+  for (const vc of visibleCars) {
+    if (vc.relZ < 0) continue;
+    const p = project(vc.relX, vc.relZ);
+    const sz = p.s * 180;
+    if (sz < 1) continue;
+    drawCarShape(p.x, p.y, sz, vc.car.color, vc.car.type, true);
+  }
+
+  if (player.offRoad && player.speed > 5) {
+    ctx.fillStyle = 'rgba(255,0,0,0.12)';
+    ctx.fillRect(WINDSHIELD.x, WINDSHIELD.y, WINDSHIELD.w, WINDSHIELD.h);
+  }
+
+  ctx.restore();
+}
+
+function drawTurnAnimation() {
+  const t = player.turning;
+  const dir = t.dir;
+  const p = t.progress;
+
+  const playerWorldX = (player.lane - LANE_OFFSET) * LANE_W;
+  const cx = WINDSHIELD.x + WINDSHIELD.w / 2;
+  const horizon = WINDSHIELD.y + 80;
+
+  ctx.save();
+  ctx.translate(cx, horizon + 100);
+  const angle = dir * p * Math.PI * 0.45;
+  ctx.rotate(angle);
+  ctx.translate(-cx, -(horizon + 100));
+
+  let roadX = 0, roadDX = 0;
+  const segs = [];
+  for (let i = 0; i < DRAW_DIST; i++) {
+    const segIdx = Math.floor(player.z / SEG_LEN + i) % roadSegs.length;
+    const seg = roadSegs[segIdx];
+    const z = i * SEG_LEN - (player.z % SEG_LEN);
+    roadDX += seg.curve * SEG_LEN;
+    roadX += roadDX;
+    segs.push({ z, relCenter: roadX - playerWorldX });
+  }
+
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const s = segs[i], sp = segs[i - 1];
+    if (s.z <= 0) continue;
+    const shade = Math.floor(player.z / SEG_LEN + i) % 3 === 0;
+    const wL = s.relCenter - ROAD_HALF, wR = s.relCenter + ROAD_HALF;
+    const wLp = sp.relCenter - ROAD_HALF, wRp = sp.relCenter + ROAD_HALF;
+    const p1 = project(wL, s.z), p2 = project(wR, s.z);
+    const p3 = project(wRp, sp.z), p4 = project(wLp, sp.z);
+    ctx.fillStyle = shade ? '#4a4a4a' : '#424242';
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+    ctx.lineTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y);
+    ctx.closePath(); ctx.fill();
+
+    if (shade) {
+      const cw = 10;
+      for (const side of [-1, 1]) {
+        const e1 = project(s.relCenter + side * (ROAD_HALF - cw), s.z);
+        const e2 = project(s.relCenter + side * ROAD_HALF, s.z);
+        const e3 = project(sp.relCenter + side * ROAD_HALF, sp.z);
+        const e4 = project(sp.relCenter + side * (ROAD_HALF - cw), sp.z);
+        ctx.fillStyle = '#e8e8e8';
+        ctx.beginPath();
+        ctx.moveTo(e1.x, e1.y); ctx.lineTo(e2.x, e2.y);
+        ctx.lineTo(e3.x, e3.y); ctx.lineTo(e4.x, e4.y);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    {
+      const ccw = 18;
+      const cl1 = project(s.relCenter - ccw, s.z), cl2 = project(s.relCenter + ccw, s.z);
+      const cl3 = project(sp.relCenter + ccw, sp.z), cl4 = project(sp.relCenter - ccw, sp.z);
+      ctx.fillStyle = '#fcd34d';
+      ctx.beginPath();
+      ctx.moveTo(cl1.x, cl1.y); ctx.lineTo(cl2.x, cl2.y);
+      ctx.lineTo(cl3.x, cl3.y); ctx.lineTo(cl4.x, cl4.y);
+      ctx.closePath(); ctx.fill();
+    }
+
+  }
+
+  for (const car of traffic) {
+    const relZ = car.z - player.z;
+    if (relZ < 0 || relZ > DRAW_DIST * SEG_LEN) continue;
+    let rx = 0, rdx = 0;
+    for (let i = 0; i < DRAW_DIST; i++) {
+      const segIdx = Math.floor(player.z / SEG_LEN + i) % roadSegs.length;
+      const seg = roadSegs[segIdx];
+      const z = i * SEG_LEN - (player.z % SEG_LEN);
+      rdx += seg.curve * SEG_LEN;
+      rx += rdx;
+      if (z >= relZ) break;
+    }
+    const relX = rx + (car.lane - LANE_OFFSET) * LANE_W - playerWorldX;
+    const p = project(relX, relZ);
+    const sz = p.s * 180;
+    if (sz < 1) continue;
+    drawCarShape(p.x, p.y, sz, car.color, car.type, true);
+  }
+
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(WINDSHIELD.x, WINDSHIELD.y, WINDSHIELD.w, WINDSHIELD.h);
+
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = 'bold 28px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(dir < 0 ? '◀ TURNING LEFT' : 'TURNING RIGHT ▶', cx, horizon + 60);
+}
+
+function drawCarShape(x, y, sz, color, type, fromBehind) {
+  const w = type === 'truck' ? sz * 1.1 : sz * 0.85;
+  const h = type === 'truck' ? sz * 1.8 : sz * 1.3;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 2, w / 2 + 2, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const grad = ctx.createLinearGradient(x - w/2, y - h, x + w/2, y);
+  grad.addColorStop(0, shadeColor(color, -30));
+  grad.addColorStop(0.5, color);
+  grad.addColorStop(1, shadeColor(color, -50));
+  ctx.fillStyle = grad;
+  roundRect(x - w/2, y - h, w, h, 3);
+  ctx.fill();
+
+  ctx.fillStyle = '#1a1a2e';
+  const winY = fromBehind ? y - h * 0.72 : y - h * 0.28;
+  roundRect(x - w/2 + 2, winY, w - 4, h * 0.22, 2);
+  ctx.fill();
+
+  ctx.fillStyle = fromBehind ? '#f00' : '#ff0';
+  if (fromBehind) {
+    ctx.fillRect(x - w/2 + 2, y - 3, w * 0.25, 3);
+    ctx.fillRect(x + w/2 - w * 0.25 - 2, y - 3, w * 0.25, 3);
+  } else {
+    ctx.fillRect(x - w/2 + 2, y - h + 1, w * 0.2, 3);
+    ctx.fillRect(x + w/2 - w * 0.2 - 2, y - h + 1, w * 0.2, 3);
+  }
+}
+
+function shadeColor(hex, percent) {
+  const num = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, Math.min(255, (num >> 16) + percent));
+  const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) + percent));
+  const b = Math.max(0, Math.min(255, (num & 0xff) + percent));
+  return `rgb(${r},${g},${b})`;
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawMirrors() {
+  drawMirrorView(REARVIEW, 0, 'rear');
+  drawMirrorView(LEFT_MIRROR, -1, 'left');
+  drawMirrorView(RIGHT_MIRROR, 1, 'right');
+}
+
+function drawMirrorView(region, laneOffset, type) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(region.x, region.y, region.w, region.h);
+  ctx.clip();
+
+  const g = ctx.createLinearGradient(0, region.y, 0, region.y + region.h);
+  g.addColorStop(0, '#3d5d8a');
+  g.addColorStop(0.4, '#555');
+  g.addColorStop(0.5, '#4a4a4a');
+  g.addColorStop(1, '#2a3a15');
+  ctx.fillStyle = g;
+  ctx.fillRect(region.x, region.y, region.w, region.h);
+
+  const horizonY = region.y + region.h * 0.35;
+  const cx = region.x + region.w / 2;
+
+  ctx.strokeStyle = '#d0d0d0';
+  ctx.lineWidth = 1;
+  for (let ln = 0; ln <= NUM_LANES; ln++) {
+    const lx = -ROAD_HALF + ln * LANE_W - laneOffset * LANE_W;
+    ctx.beginPath();
+    ctx.moveTo(cx + lx * 0.06, horizonY);
+    ctx.lineTo(cx + lx * 0.22, region.y + region.h);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#fbbf24';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(cx - laneOffset * LANE_W * 0.06, horizonY);
+  ctx.lineTo(cx - laneOffset * LANE_W * 0.22, region.y + region.h);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const playerWorldX = (player.lane - LANE_OFFSET) * LANE_W;
+  const carsBehind = [];
+  for (const car of traffic) {
+    const relZ = player.z - car.z;
+    if (relZ < 0 || relZ > 3000) continue;
+    let rx = 0, rdx = 0;
+    for (let i = 0; i < 60; i++) {
+      const segIdx = Math.floor(car.z / SEG_LEN + i) % roadSegs.length;
+      const seg = roadSegs[segIdx];
+      const z = i * SEG_LEN;
+      rdx += seg.curve * SEG_LEN;
+      rx += rdx;
+      if (z >= relZ) break;
+    }
+    const carWorldX = rx + (car.lane - LANE_OFFSET) * LANE_W;
+    const relX = carWorldX - playerWorldX;
+    carsBehind.push({ car, relX, relZ });
+  }
+
+  carsBehind.sort((a, b) => a.relZ - b.relZ);
+  for (const cb of carsBehind) {
+    const p = projectMirror(cb.relX, cb.relZ, region, laneOffset * LANE_W);
+    const sz = Math.max(2, p.s * 60);
+    if (p.y < region.y || p.y > region.y + region.h) continue;
+    drawCarShape(p.x, p.y, sz, cb.car.color, cb.car.type, false);
+  }
+
+  ctx.restore();
+
+  ctx.strokeStyle = type === 'rear' ? '#666' : '#555';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(region.x, region.y, region.w, region.h);
+
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(region.x + 2, region.y + 2, region.w - 4, region.h - 4);
+
+  ctx.fillStyle = '#888';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(type === 'rear' ? 'REARVIEW' : type === 'left' ? '◀ LEFT' : 'RIGHT ▶',
+    region.x + region.w / 2, region.y + region.h - 3);
+
+  if (type === 'left' && blindSpotCheck(-1)) {
+    ctx.fillStyle = 'rgba(239,68,68,0.3)';
+    ctx.fillRect(region.x, region.y, region.w, region.h);
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('⚠ BLIND SPOT', region.x + region.w / 2, region.y + 12);
+  }
+  if (type === 'right' && blindSpotCheck(1)) {
+    ctx.fillStyle = 'rgba(239,68,68,0.3)';
+    ctx.fillRect(region.x, region.y, region.w, region.h);
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillText('⚠ BLIND SPOT', region.x + region.w / 2, region.y + 12);
+  }
+}
+
+function blindSpotCheck(side) {
+  const targetLane = player.lane + side * 0.5;
+  for (const car of traffic) {
+    const relZ = player.z - car.z;
+    if (relZ < 20 || relZ > 200) continue;
+    if (Math.abs(car.lane - targetLane) < 0.4) return true;
+  }
+  return false;
+}
+
+function drawCockpitFrame() {
+  ctx.fillStyle = '#15151a';
+  ctx.fillRect(0, 0, W, WINDSHIELD.y);
+
+  ctx.fillStyle = '#222230';
+  ctx.beginPath();
+  ctx.moveTo(0, WINDSHIELD.y);
+  ctx.lineTo(WINDSHIELD.x, WINDSHIELD.y + 15);
+  ctx.lineTo(WINDSHIELD.x, DASH_Y);
+  ctx.lineTo(0, DASH_Y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(W, WINDSHIELD.y);
+  ctx.lineTo(WINDSHIELD.x + WINDSHIELD.w, WINDSHIELD.y + 15);
+  ctx.lineTo(WINDSHIELD.x + WINDSHIELD.w, DASH_Y);
+  ctx.lineTo(W, DASH_Y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#1e1e28';
+  ctx.fillRect(WINDSHIELD.x, WINDSHIELD.y + WINDSHIELD.h, WINDSHIELD.w, DASH_Y - WINDSHIELD.y - WINDSHIELD.h);
+
+  ctx.fillStyle = '#2a2a35';
+  ctx.fillRect(0, WINDSHIELD.y - 4, W, 4);
+}
+
+function drawDashboard() {
+  const dashGrad = ctx.createLinearGradient(0, DASH_Y, 0, H);
+  dashGrad.addColorStop(0, '#2a2a35');
+  dashGrad.addColorStop(0.3, '#1e1e28');
+  dashGrad.addColorStop(1, '#15151c');
+  ctx.fillStyle = dashGrad;
+  ctx.fillRect(0, DASH_Y, W, H - DASH_Y);
+
+  ctx.fillStyle = '#333340';
+  ctx.fillRect(0, DASH_Y, W, 3);
+
+  drawSteeringWheel(W / 2, H - 95, 88);
+  drawSpeedometer(180, DASH_Y + 80, 62);
+  drawTachometer(W - 180, DASH_Y + 80, 62);
+
+  drawTurnSignalDash(W / 2 - 130, DASH_Y + 18, -1);
+  drawTurnSignalDash(W / 2 + 130, DASH_Y + 18, 1);
+  drawPedalIndicators(70, H - 50);
+  drawInfoPanel(W - 260, H - 55);
+  drawWarningLights(W / 2, DASH_Y + 55);
+}
+
+function drawSteeringWheel(cx, cy, r) {
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  const maxRot = Math.PI * 0.65;
+  const rot = player.steering * maxRot;
+  ctx.rotate(rot);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(3, 5, r + 3, r + 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  const rimGrad = ctx.createRadialGradient(0, 0, r - 12, 0, 0, r);
+  rimGrad.addColorStop(0, '#2a2a2a');
+  rimGrad.addColorStop(0.7, '#1a1a1a');
+  rimGrad.addColorStop(1, '#0a0a0a');
+  ctx.strokeStyle = rimGrad;
+  ctx.lineWidth = 16;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#3a3a3a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(0, 0, r - 7, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, r + 7, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = 14;
+  ctx.lineCap = 'round';
+  for (const angle of [-Math.PI/2 - 0.6, -Math.PI/2 + 0.6, Math.PI/2]) {
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * 18, Math.sin(angle) * 18);
+    ctx.lineTo(Math.cos(angle) * (r - 4), Math.sin(angle) * (r - 4));
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(0, 0, 22, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#555';
+  ctx.beginPath();
+  ctx.arc(0, 0, 18, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (player.horn) {
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('♪', 0, 4);
+  }
+
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath();
+  ctx.arc(0, -r, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
+  ctx.fillStyle = '#444';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('STEERING', cx, cy + r + 18);
+}
+
+function drawSpeedometer(cx, cy, r) {
+  ctx.fillStyle = '#0d0d12';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const startAngle = Math.PI * 0.75;
+  const endAngle = Math.PI * 2.25;
+  const totalAngle = endAngle - startAngle;
+  const maxSpeed = 140;
+
+  for (let s = 0; s <= maxSpeed; s += 10) {
+    const a = startAngle + (s / maxSpeed) * totalAngle;
+    const isMajor = s % 20 === 0;
+    const tickLen = isMajor ? 10 : 5;
+    ctx.strokeStyle = isMajor ? '#aaa' : '#666';
+    ctx.lineWidth = isMajor ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - tickLen), cy + Math.sin(a) * (r - tickLen));
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+
+    if (isMajor && s % 40 === 0) {
+      ctx.fillStyle = '#aaa';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'center';
+      const tx = cx + Math.cos(a) * (r - 20);
+      const ty = cy + Math.sin(a) * (r - 20) + 3;
+      ctx.fillText(s, tx, ty);
+    }
+  }
+
+  for (let s = 60; s <= 80; s += 10) {
+    const a = startAngle + (s / maxSpeed) * totalAngle;
+    ctx.strokeStyle = '#fbbf24';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8));
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+  }
+  for (let s = 90; s <= maxSpeed; s += 10) {
+    const a = startAngle + (s / maxSpeed) * totalAngle;
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8));
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+  }
+
+  const speedAngle = startAngle + (Math.min(Math.abs(player.speed), maxSpeed) / maxSpeed) * totalAngle;
+  ctx.strokeStyle = '#4ade80';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(speedAngle) * (r - 12), cy + Math.sin(speedAngle) * (r - 12));
+  ctx.stroke();
+
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath();
+  ctx.arc(cx + Math.cos(speedAngle) * (r - 12), cy + Math.sin(speedAngle) * (r - 12), 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#4ade80';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(Math.abs(player.speed)), cx, cy + 16);
+  ctx.fillStyle = '#888';
+  ctx.font = '9px sans-serif';
+  ctx.fillText('km/h', cx, cy + 28);
+
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.fillText('SPEED', cx, cy + r + 14);
+}
+
+function drawTachometer(cx, cy, r) {
+  ctx.fillStyle = '#0d0d12';
+  ctx.beginPath();
+  ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const startA = Math.PI * 0.75;
+  const endA = Math.PI * 2.25;
+  const totalA = endA - startA;
+  const maxRpm = 8000;
+  const rpm = Math.abs(player.speed) * 60;
+
+  for (let v = 0; v <= maxRpm; v += 1000) {
+    const a = startA + (v / maxRpm) * totalA;
+    const isMajor = v % 2000 === 0;
+    ctx.strokeStyle = isMajor ? '#aaa' : '#666';
+    ctx.lineWidth = isMajor ? 2 : 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - (isMajor ? 10 : 5)), cy + Math.sin(a) * (r - (isMajor ? 10 : 5)));
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+    if (isMajor) {
+      ctx.fillStyle = '#aaa';
+      ctx.font = '8px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(v / 1000, cx + Math.cos(a) * (r - 18), cy + Math.sin(a) * (r - 18) + 3);
+    }
+  }
+
+  for (let v = 6000; v <= maxRpm; v += 1000) {
+    const a = startA + (v / maxRpm) * totalA;
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * (r - 8), cy + Math.sin(a) * (r - 8));
+    ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    ctx.stroke();
+  }
+
+  const na = startA + (Math.min(rpm, maxRpm) / maxRpm) * totalA;
+  ctx.strokeStyle = '#60a5fa';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(na) * (r - 12), cy + Math.sin(na) * (r - 12));
+  ctx.stroke();
+
+  ctx.fillStyle = '#333';
+  ctx.beginPath();
+  ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#60a5fa';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(Math.round(rpm / 100) / 10, cx, cy + 14);
+  ctx.fillStyle = '#888';
+  ctx.font = '8px sans-serif';
+  ctx.fillText('x1000 rpm', cx, cy + 24);
+
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.fillText('RPM', cx, cy + r + 14);
+}
+
+function drawGearShifter(cx, cy) {
+  const gears = ['P', 'R', 'N', 'D'];
+  const spacing = 36;
+  const startX = cx - (gears.length - 1) * spacing / 2;
+
+  ctx.fillStyle = '#0d0d12';
+  roundRect(startX - 22, cy - 14, gears.length * spacing + 8, 28, 6);
+  ctx.fill();
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  for (let i = 0; i < gears.length; i++) {
+    const gx = startX + i * spacing;
+    const isCurrent = player.gear === gears[i];
+    if (isCurrent) {
+      ctx.fillStyle = player.gear === 'D' ? '#4ade80' : player.gear === 'R' ? '#f87171' : '#60a5fa';
+      ctx.beginPath();
+      ctx.arc(gx, cy, 11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = isCurrent ? '#000' : '#666';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(gears[i], gx, cy + 4);
+  }
+
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('GEAR', cx, cy - 20);
+}
+
+function drawTurnSignalDash(cx, cy, dir) {
+  const active = dir < 0 ? player.leftSignal : player.rightSignal;
+  const blinking = active && Math.floor(player.signalTimer * 3) % 2 === 0;
+
+  ctx.fillStyle = blinking ? '#4ade80' : '#333';
+  ctx.beginPath();
+  if (dir < 0) {
+    ctx.moveTo(cx - 12, cy);
+    ctx.lineTo(cx, cy - 10);
+    ctx.lineTo(cx, cy - 4);
+    ctx.lineTo(cx + 12, cy - 4);
+    ctx.lineTo(cx + 12, cy + 4);
+    ctx.lineTo(cx, cy + 4);
+    ctx.lineTo(cx, cy + 10);
+  } else {
+    ctx.moveTo(cx + 12, cy);
+    ctx.lineTo(cx, cy - 10);
+    ctx.lineTo(cx, cy - 4);
+    ctx.lineTo(cx - 12, cy - 4);
+    ctx.lineTo(cx - 12, cy + 4);
+    ctx.lineTo(cx, cy + 4);
+    ctx.lineTo(cx, cy + 10);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  if (blinking) {
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = '#4ade80';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawPedalIndicators(cx, cy) {
+  ctx.fillStyle = '#666';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('PEDALS', cx, cy - 18);
+
+  const pedalW = 22, pedalH = 30;
+
+  ctx.fillStyle = '#1a1a22';
+  roundRect(cx, cy - 12, pedalW, pedalH, 3); ctx.fill();
+  ctx.fillStyle = player.gasPressed ? '#4ade80' : '#333';
+  const gasH = player.gasPressed ? pedalH : pedalH * 0.3;
+  roundRect(cx, cy - 12 + pedalH - gasH, pedalW, gasH, 3); ctx.fill();
+  ctx.fillStyle = '#666';
+  ctx.font = '8px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('GAS', cx + pedalW/2, cy + 24);
+
+  const bx = cx + pedalW + 8;
+  ctx.fillStyle = '#1a1a22';
+  roundRect(bx, cy - 12, pedalW, pedalH, 3); ctx.fill();
+  ctx.fillStyle = player.brakePressed ? '#ef4444' : '#333';
+  const brakeH = player.brakePressed ? pedalH : pedalH * 0.3;
+  roundRect(bx, cy - 12 + pedalH - brakeH, pedalW, brakeH, 3); ctx.fill();
+  ctx.fillStyle = '#666';
+  ctx.fillText('BRAKE', bx + pedalW/2, cy + 24);
+}
+
+function drawInfoPanel(cx, cy) {
+  ctx.fillStyle = '#0d0d12';
+  roundRect(cx, cy - 18, 240, 42, 5);
+  ctx.fill();
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = '#888';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('DISTANCE', cx + 8, cy - 6);
+  ctx.fillText('SPEED LIMIT', cx + 120, cy - 6);
+
+  ctx.fillStyle = '#4ade80';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.fillText(Math.round(Math.max(0, player.distance)) + ' m', cx + 8, cy + 10);
+
+  ctx.fillStyle = '#fbbf24';
+  ctx.fillText('60 km/h', cx + 120, cy + 10);
+
+  if (player.headlights) {
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('💡 HEADLIGHTS', cx + 232, cy + 10);
+  }
+}
+
+function drawWarningLights(cx, cy) {
+  if (player.offRoad && player.speed > 5) {
+    ctx.fillStyle = '#ef4444';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    const blink = Math.floor(Date.now() / 250) % 2 === 0;
+    if (blink) ctx.fillText('⚠ OFF ROAD', cx, cy);
+  }
+
+  if (Math.abs(player.speed) > 70) {
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚠ OVER SPEED LIMIT', cx, cy + 14);
+  }
+}
+
+function drawGuidance() {
+  if (!guidanceText) return;
+  const boxW = 520, boxH = 32;
+  const bx = W / 2 - boxW / 2;
+  const by = WINDSHIELD.y + WINDSHIELD.h - 40;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  roundRect(bx, by, boxW, boxH, 8);
+  ctx.fill();
+
+  const borderColor = guidanceType === 'warn' ? '#f87171' : guidanceType === 'success' ? '#4ade80' : '#60a5fa';
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = borderColor;
+  ctx.font = '13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(guidanceText, W / 2, by + 20);
+}
+
+function update(dt) {
+  if (player.turning) {
+    player.turning.progress += dt / 1.8;
+    player.steering = player.turning.dir * (1 - player.turning.progress);
+    if (player.turning.progress >= 1) {
+      player.turning = null;
+      player.steering = 0;
+      player.lane = Math.max(0, Math.min(NUM_LANES - 1, Math.round(player.lane)));
+      showToast('Turn complete. Continue driving.', 'info');
+    }
+    return;
+  }
+
+  const gas = keys['ArrowUp'] || keys['w'] || keys['W'];
+  const brake = keys['ArrowDown'] || keys['s'] || keys['S'];
+  const handbrake = keys[' '];
+  const steerL = keys['ArrowLeft'] || keys['a'] || keys['A'];
+  const steerR = keys['ArrowRight'] || keys['d'] || keys['D'];
+
+  player.gasPressed = !!gas;
+  player.brakePressed = !!brake;
+  player.handbrake = !!handbrake;
+
+  if (gas && player.gear === 'P' && !player._parkWarn) {
+    player._parkWarn = true;
+    showToast('Shift to Drive (D) first, then press GAS!', 'warn');
+    setTimeout(() => { player._parkWarn = false; }, 2500);
+  }
+
+
+  if (keys['h'] || keys['H']) { player.horn = true; keys['h'] = false; keys['H'] = false; setTimeout(() => player.horn = false, 300); }
+  if (keys['l'] || keys['L']) { player.headlights = !player.headlights; keys['l'] = false; keys['L'] = false; showToast(player.headlights ? 'Headlights ON' : 'Headlights OFF', 'info'); }
+
+  if (keys['q'] || keys['Q']) { player.leftSignal = !player.leftSignal; player.rightSignal = false; keys['q'] = false; keys['Q'] = false; showToast(player.leftSignal ? '◀ Left signal ON' : 'Signal OFF', 'info'); }
+  if (keys['e'] || keys['E']) { player.rightSignal = !player.rightSignal; player.leftSignal = false; keys['e'] = false; keys['E'] = false; showToast(player.rightSignal ? 'Right signal ON ▶' : 'Signal OFF', 'info'); }
+  player.signalTimer += dt;
+
+  if (keys['1']) { player.lane = 0; keys['1'] = false; }
+  if (keys['2']) { player.lane = 1; keys['2'] = false; }
+
+
+  if (player.gear === 'D') {
+    if (gas) player.speed += 30 * dt;
+    else if (brake) player.speed -= 60 * dt;
+    else player.speed -= 10 * dt;
+  } else if (player.gear === 'R') {
+    if (gas) player.speed -= 20 * dt;
+    else if (brake) player.speed += 50 * dt;
+    else player.speed += 8 * dt;
+  } else {
+    player.speed *= 0.92;
+  }
+
+  if (handbrake) player.speed *= 0.93;
+  player.speed = Math.max(-35, Math.min(130, player.speed));
+  if (player.gear === 'P') player.speed = 0;
+
+  if (steerL) player.steering -= 2.8 * dt;
+  else if (steerR) player.steering += 2.8 * dt;
+  else player.steering *= Math.max(0, 1 - 5 * dt);
+  player.steering = Math.max(-1, Math.min(1, player.steering));
+
+  const speedFactor = player.speed / 80;
+  player.lane += player.steering * speedFactor * dt * 0.8;
+
+  const segIdx = ((Math.floor(player.z / SEG_LEN) % roadSegs.length) + roadSegs.length) % roadSegs.length;
+  const currentCurve = roadSegs[segIdx] ? roadSegs[segIdx].curve : 0;
+  player.lane += currentCurve * Math.abs(player.speed) * dt * 6;
+
+  player.offRoad = player.lane < -0.4 || player.lane > NUM_LANES - 0.6;
+  if (player.offRoad && Math.abs(player.speed) > 8) {
+    player.speed *= (1 - dt * 2);
+  }
+  player.lane = Math.max(-0.6, Math.min(NUM_LANES - 0.4, player.lane));
+
+  player.z += player.speed * dt * 12;
+  if (player.z < 0) player.z = 0;
+  player.distance += Math.abs(player.speed) * dt * 12 / 10;
+
+  for (const car of traffic) {
+    let aheadCar = null;
+    for (const other of traffic) {
+      if (other === car) continue;
+      if (other.lane === car.lane && other.z > car.z && other.z - car.z < 400) {
+        if (!aheadCar || other.z < aheadCar.z) aheadCar = other;
+      }
+    }
+    if (aheadCar) {
+      const gap = aheadCar.z - car.z;
+      if (gap < 200) car.speed = Math.max(0, car.speed - 40 * dt);
+      else if (gap < 350) car.speed = Math.max(aheadCar.speed, car.speed - 15 * dt);
+      else car.speed = Math.min(car.speed + 10 * dt, 60);
+    } else {
+      car.speed = Math.min(car.speed + 5 * dt, 60);
+    }
+    car.z += car.speed * dt * 12;
+
+    if (car.z - player.z < -500) {
+      car.z = player.z + 6000 + Math.random() * 3000;
+      const inRightLane = Math.random() < 0.7;
+      car.lane = inRightLane ? 1 : 0;
+      car.speed = inRightLane ? 18 + Math.random() * 22 : 38 + Math.random() * 15;
+      car.passed = false;
+    }
+  }
+
+  for (const isct of intersections) {
+    isct.timer += dt;
+    if (isct.light === 'green' && isct.timer > 8) { isct.light = 'yellow'; isct.timer = 0; }
+    else if (isct.light === 'yellow' && isct.timer > 2.5) { isct.light = 'red'; isct.timer = 0; }
+    else if (isct.light === 'red' && isct.timer > 6) { isct.light = 'green'; isct.timer = 0; }
+
+    const relZ = isct.z - player.z;
+    if (relZ > 0 && relZ < 150 && !isct.passed) {
+      if (isct.light === 'red' && player.speed > 5) {
+        player.speed = Math.max(0, player.speed - 80 * dt);
+        if (player.speed < 1) {
+          isct.stopping = true;
+        }
+      }
+      if (isct.light === 'green' && isct.stopping) {
+        isct.stopping = false;
+        showToast('Green light — proceed when safe.', 'info');
+      }
+    }
+    if (relZ < -50 && !isct.passed) {
+      isct.passed = true;
+    }
+  }
+
+  for (const car of traffic) {
+    const relZ = car.z - player.z;
+    if (relZ > 0 && relZ < 120) {
+      if (Math.abs(car.lane - player.lane) < 0.35) {
+        player.speed = Math.min(player.speed, car.speed - 5);
+        if (Math.abs(car.lane - player.lane) < 0.25 && player.speed > car.speed) {
+          showToast('⚠ Too close to vehicle ahead!', 'warn');
+        }
+      }
+    }
+  }
+
+  updateGuidance();
+
+  if (toastTimer > 0) {
+    toastTimer -= dt;
+    if (toastTimer <= 0) {
+      document.getElementById('toast').classList.remove('show', 'warn', 'info');
+    }
+  }
+}
+
+function updateGuidance() {
+  guidanceText = '';
+  guidanceType = 'info';
+
+  for (const isct of intersections) {
+    const relZ = isct.z - player.z;
+    if (relZ > 50 && relZ < 400) {
+      if (isct.light === 'red') {
+        guidanceText = '🔴 Red light ahead — come to a complete stop before the line.';
+        guidanceType = 'warn';
+        return;
+      } else if (isct.light === 'yellow') {
+        guidanceText = '🟡 Yellow light — prepare to stop.';
+        guidanceType = 'warn';
+        return;
+      } else if (isct.light === 'green' && relZ < 200) {
+        guidanceText = '🟢 Green light — proceed through the intersection.';
+        guidanceType = 'success';
+        return;
+      }
+    }
+  }
+
+  const segIdx = ((Math.floor(player.z / SEG_LEN) % roadSegs.length) + roadSegs.length) % roadSegs.length;
+  if (roadSegs[segIdx] && roadSegs[segIdx].sharp && player.speed > 50) {
+    guidanceText = '⚠ Sharp curve ahead — reduce speed and steer carefully.';
+    guidanceType = 'warn';
+    return;
+  }
+
+  for (const car of traffic) {
+    const relZ = car.z - player.z;
+    if (relZ > 80 && relZ < 400 && Math.abs(car.lane - player.lane) < 0.3 && car.speed < player.speed - 10) {
+      const leftClear = isLaneClear(-1);
+      const rightClear = isLaneClear(1);
+      if (leftClear) {
+        guidanceText = 'Slower vehicle ahead. Check left mirror, signal left (Q), and overtake when safe.';
+        guidanceType = 'info';
+      } else if (rightClear) {
+        guidanceText = 'Slower vehicle ahead. Check right mirror, signal right (E), and overtake when safe.';
+        guidanceType = 'info';
+      } else {
+        guidanceText = 'Slower vehicle ahead. Both lanes occupied — wait for a gap.';
+        guidanceType = 'warn';
+      }
+      return;
+    }
+  }
+
+  if (Math.abs(player.steering) > 0.3 && !player.leftSignal && !player.rightSignal) {
+    guidanceText = 'Remember to use turn signals before changing lanes.';
+    guidanceType = 'warn';
+    return;
+  }
+
+  if (blindSpotCheck(-1) && player.steering < -0.2) {
+    guidanceText = '⚠ Vehicle in left blind spot — do not change lanes.';
+    guidanceType = 'warn';
+    return;
+  }
+  if (blindSpotCheck(1) && player.steering > 0.2) {
+    guidanceText = '⚠ Vehicle in right blind spot — do not change lanes.';
+    guidanceType = 'warn';
+    return;
+  }
+
+  if (Math.abs(player.speed) > 70) {
+    guidanceText = 'You are exceeding the speed limit (60 km/h). Slow down.';
+    guidanceType = 'warn';
+    return;
+  }
+
+  if (player.gear === 'P' && player.speed === 0) {
+    guidanceText = 'TAP "D" to shift into Drive, then press GAS to accelerate. Check mirrors before moving.';
+    guidanceType = 'info';
+    return;
+  }
+
+  if (player.speed > 0 && player.speed < 5) {
+    guidanceText = 'Gently press ↑ to accelerate. Keep both hands on the steering wheel.';
+    guidanceType = 'info';
+    return;
+  }
+}
+
+function isLaneClear(dir) {
+  const targetLane = player.lane + dir;
+  if (targetLane < 0 || targetLane > NUM_LANES - 1) return false;
+  for (const car of traffic) {
+    const relZ = car.z - player.z;
+    if (Math.abs(car.lane - targetLane) < 0.4 && relZ > -200 && relZ < 500) return false;
+  }
+  return true;
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.remove('warn', 'info');
+  t.classList.add('show', type || 'info');
+  toastTimer = 3;
+}
+
+let lastTime = 0;
+function loop(time) {
+  const dt = Math.min(0.05, (time - lastTime) / 1000);
+  lastTime = time;
+  if (running) update(dt);
+  render();
+  updateGearButtons();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ' && !running) return;
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+
+  if (running) {
+    if (e.key === 'p' || e.key === 'P') { player.gear = 'P'; player.speed = 0; updateGearButtons(); }
+    if ((e.key === 'r' || e.key === 'R') && Math.abs(player.speed) < 3) { player.gear = 'R'; updateGearButtons(); }
+    if ((e.key === 'n' || e.key === 'N') && Math.abs(player.speed) < 3) { player.gear = 'N'; updateGearButtons(); }
+    if ((e.key === 'f' || e.key === 'F') && Math.abs(player.speed) < 3) { player.gear = 'D'; updateGearButtons(); }
+  }
+
+  if (running && !player.turning) {
+    for (const isct of intersections) {
+      const relZ = isct.z - player.z;
+      if (relZ > 20 && relZ < 100 && isct.light !== 'red' && player.speed < 25) {
+        if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+          player.turning = { dir: -1, progress: 0 };
+          player.leftSignal = true;
+          isct.passed = true;
+          showToast('Turning left...', 'info');
+          return;
+        }
+        if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+          player.turning = { dir: 1, progress: 0 };
+          player.rightSignal = true;
+          isct.passed = true;
+          showToast('Turning right...', 'info');
+          return;
+        }
+      }
+    }
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  running = true;
+  player.gear = 'D';
+  updateGearButtons();
+  document.getElementById('instructions').style.display = 'none';
+  showToast('Engine started. Press GAS to drive. Check your mirrors!', 'info');
+});
+
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+
+function adjustContainer() {
+  const container = document.getElementById('gameContainer');
+  const ratio = 1100 / 750;
+  let w = Math.min(window.innerWidth, 1100);
+  let h = w / ratio;
+  if (h > window.innerHeight) {
+    h = window.innerHeight;
+    w = h * ratio;
+  }
+  container.style.width = w + 'px';
+  container.style.height = h + 'px';
+  if (isTouchDevice || window.innerWidth < 1000) {
+    document.getElementById('touchControls').classList.add('show');
+  } else {
+    document.getElementById('touchControls').classList.remove('show');
+  }
+}
+window.addEventListener('resize', adjustContainer);
+window.addEventListener('orientationchange', adjustContainer);
+adjustContainer();
+
+function updateGearButtons() {
+  document.querySelectorAll('.tc-gear').forEach(b => {
+    b.classList.toggle('active', b.dataset.gear === player.gear);
+  });
+  document.querySelectorAll('.gear-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.gear === player.gear);
+  });
+}
+
+function checkTouchTurn(dir) {
+  if (!running || player.turning) return false;
+  for (const isct of intersections) {
+    const relZ = isct.z - player.z;
+    if (relZ > 20 && relZ < 100 && isct.light !== 'red' && player.speed < 25) {
+      player.turning = { dir: dir, progress: 0 };
+      if (dir < 0) player.leftSignal = true;
+      else player.rightSignal = true;
+      isct.passed = true;
+      showToast(dir < 0 ? 'Turning left...' : 'Turning right...', 'info');
+      return true;
+    }
+  }
+  return false;
+}
+
+document.querySelectorAll('.tc-btn').forEach(btn => {
+  const key = btn.dataset.key;
+  const gear = btn.dataset.gear;
+
+  const press = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.classList.add('pressed');
+    if (key) {
+      keys[key] = true;
+      if (key === 'ArrowLeft') checkTouchTurn(-1);
+      else if (key === 'ArrowRight') checkTouchTurn(1);
+    }
+    if (gear) {
+      player.gear = gear;
+      if (gear === 'P') player.speed = 0;
+      updateGearButtons();
+      showToast('Gear: ' + gear, 'info');
+    }
+  };
+  const release = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    btn.classList.remove('pressed');
+    if (key) keys[key] = false;
+  };
+
+  btn.addEventListener('touchstart', press, { passive: false });
+  btn.addEventListener('touchend', release, { passive: false });
+  btn.addEventListener('touchcancel', release, { passive: false });
+  btn.addEventListener('mousedown', press);
+  btn.addEventListener('mouseup', release);
+  btn.addEventListener('mouseleave', release);
+});
+
+document.querySelectorAll('.tc-gear').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    const gear = btn.dataset.gear;
+    player.gear = gear;
+    if (gear === 'P') player.speed = 0;
+    updateGearButtons();
+    showToast('Gear: ' + gear, 'info');
+  });
+});
+
+document.querySelectorAll('.gear-btn').forEach(btn => {
+  const setGear = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const gear = btn.dataset.gear;
+    player.gear = gear;
+    if (gear === 'P') player.speed = 0;
+    updateGearButtons();
+    showToast('Gear: ' + gear, 'info');
+  };
+  btn.addEventListener('touchstart', setGear, { passive: false });
+  btn.addEventListener('click', setGear);
+  btn.addEventListener('mousedown', setGear);
+});
+
+generateRoad();
+generateIntersections();
+generateTraffic();
+requestAnimationFrame(loop);
+</script>
+
+</body>
+</html>
