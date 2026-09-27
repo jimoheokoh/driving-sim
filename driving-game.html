@@ -334,6 +334,7 @@ const player = {
   turning: null,
   offRoad: false,
   distance: 0,
+  crashed: false,
 };
 
 let roadSegs = [];
@@ -375,18 +376,30 @@ function generateIntersections() {
 function generateTraffic() {
   traffic = [];
   const colors = ['#dc2626','#2563eb','#16a34a','#ea580c','#7c3aed','#0891b2','#ca8a04','#be185d','#475569','#65a30d'];
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 7; i++) {
     const inRightLane = Math.random() < 0.7;
     const lane = inRightLane ? 1 : 0;
     const speed = inRightLane
       ? 18 + Math.random() * 22
       : 38 + Math.random() * 15;
     traffic.push({
-      z: 400 + i * 600 + Math.random() * 300,
+      z: 500 + i * 900 + Math.random() * 400,
       lane: lane,
       speed: speed,
       color: colors[Math.floor(Math.random() * colors.length)],
       type: Math.random() < 0.2 ? 'truck' : 'car',
+      passed: false,
+    });
+  }
+  for (let i = 0; i < 5; i++) {
+    const inRightLane = Math.random() < 0.6;
+    const lane = inRightLane ? 1 : 0;
+    traffic.push({
+      z: -400 - i * 700 - Math.random() * 400,
+      lane: lane,
+      speed: 45 + Math.random() * 25,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      type: Math.random() < 0.15 ? 'truck' : 'car',
       passed: false,
     });
   }
@@ -426,6 +439,22 @@ function render() {
   drawCockpitFrame();
   drawDashboard();
   drawGuidance();
+  if (player.crashed) drawCrashOverlay();
+}
+
+function drawCrashOverlay() {
+  ctx.fillStyle = 'rgba(120,0,0,0.55)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ef4444';
+  ctx.font = 'bold 52px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('💥 CRASH!', W / 2, H / 2 - 20);
+  ctx.fillStyle = '#fca5a5';
+  ctx.font = '18px sans-serif';
+  ctx.fillText('You collided with another vehicle.', W / 2, H / 2 + 15);
+  ctx.fillStyle = '#ddd';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('Press ENTER or click Restart to try again.', W / 2, H / 2 + 42);
 }
 
 function drawSky() {
@@ -1435,10 +1464,16 @@ function update(dt) {
     car.z += car.speed * dt * 12;
 
     if (car.z - player.z < -500) {
-      car.z = player.z + 6000 + Math.random() * 3000;
-      const inRightLane = Math.random() < 0.7;
-      car.lane = inRightLane ? 1 : 0;
-      car.speed = inRightLane ? 18 + Math.random() * 22 : 38 + Math.random() * 15;
+      if (Math.random() < 0.4) {
+        car.z = player.z - 2500 - Math.random() * 2000;
+        car.lane = Math.random() < 0.6 ? 1 : 0;
+        car.speed = 45 + Math.random() * 25;
+      } else {
+        car.z = player.z + 6000 + Math.random() * 3000;
+        const inRightLane = Math.random() < 0.7;
+        car.lane = inRightLane ? 1 : 0;
+        car.speed = inRightLane ? 18 + Math.random() * 22 : 38 + Math.random() * 15;
+      }
       car.passed = false;
     }
   }
@@ -1469,13 +1504,16 @@ function update(dt) {
 
   for (const car of traffic) {
     const relZ = car.z - player.z;
-    if (relZ > 0 && relZ < 120) {
-      if (Math.abs(car.lane - player.lane) < 0.35) {
-        player.speed = Math.min(player.speed, car.speed - 5);
-        if (Math.abs(car.lane - player.lane) < 0.25 && player.speed > car.speed) {
-          showToast('⚠ Too close to vehicle ahead!', 'warn');
-        }
-      }
+    const laneDiff = Math.abs(car.lane - player.lane);
+    if (Math.abs(relZ) < 55 && laneDiff < 0.3 && Math.abs(player.speed) > 3) {
+      player.crashed = true;
+      running = false;
+      player.speed = 0;
+      showToast('💥 CRASH! Simulation ended.', 'warn');
+      return;
+    }
+    if (relZ > 0 && relZ < 150 && laneDiff < 0.35 && player.speed > car.speed) {
+      showToast('⚠ Too close to vehicle ahead!', 'warn');
     }
   }
 
@@ -1644,6 +1682,34 @@ document.getElementById('startBtn').addEventListener('click', () => {
   updateGearButtons();
   document.getElementById('instructions').style.display = 'none';
   showToast('Engine started. Press GAS to drive. Check your mirrors!', 'info');
+});
+
+function restartGame() {
+  player.z = 0;
+  player.lane = 1;
+  player.speed = 0;
+  player.steering = 0;
+  player.gear = 'D';
+  player.leftSignal = false;
+  player.rightSignal = false;
+  player.turning = null;
+  player.offRoad = false;
+  player.distance = 0;
+  player.crashed = false;
+  generateRoad();
+  generateIntersections();
+  generateTraffic();
+  running = true;
+  showToast('Simulation restarted. Drive safely!', 'info');
+}
+
+window.addEventListener('keydown', e => {
+  if (player.crashed && (e.key === 'Enter' || e.key === ' ')) {
+    restartGame();
+  }
+});
+canvas.addEventListener('click', () => {
+  if (player.crashed) restartGame();
 });
 
 const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
