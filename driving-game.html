@@ -863,7 +863,7 @@ function drawMirrorView(region, laneOffset, type) {
     if (relZ < 0 || relZ > 3000) continue;
     let rx = 0, rdx = 0;
     for (let i = 0; i < 60; i++) {
-      const segIdx = Math.floor(car.z / SEG_LEN + i) % roadSegs.length;
+      const segIdx = ((Math.floor(car.z / SEG_LEN + i) % roadSegs.length) + roadSegs.length) % roadSegs.length;
       const seg = roadSegs[segIdx];
       const z = i * SEG_LEN;
       rdx += seg.curve * SEG_LEN;
